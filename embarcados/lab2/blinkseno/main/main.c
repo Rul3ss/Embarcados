@@ -3,7 +3,7 @@
 #include "freertos/task.h"
 #include "driver/gpio.h"
 
-#define led_pin 2
+#define LED_PIN 2
 
 #define PI 3.14159265358979323846
 #define NUM_PONTOS 1000
@@ -62,8 +62,8 @@ void app_main(void)
 {
 
 
-    gpio_reset_pin(led_pin);
-    gpio_set_direction(led_pin, GPIO_MODE_OUTPUT);
+    gpio_reset_pin(LED_PIN);
+    gpio_set_direction(LED_PIN, GPIO_MODE_OUTPUT);
 
     double x;
     double y;
@@ -78,9 +78,9 @@ void app_main(void)
         x = contador * incremento;
         y = meu_seno(x);
         if(y<0){  
-          gpio_set_level(led_pin, true);
+          gpio_set_level(LED_PIN, true);
         }else{
-          gpio_set_level(led_pin, false);
+          gpio_set_level(LED_PIN, false);
         }
         //vTaskDelay(pdMS_TO_TICKS(10)); testar pra ver se vai precisar do delay
        
