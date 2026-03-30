@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "esp_timer.h"
 
 #define LED_PIN 2
 
@@ -60,6 +61,9 @@ double meu_seno(double x) {
 
 void app_main(void)
 {
+    uint64_t time = esp_timer_get_time();
+    printf("começo: %llu\n",time);
+
 
 
     gpio_reset_pin(LED_PIN);
@@ -72,20 +76,32 @@ void app_main(void)
 
     incremento = (2.0 * PI) / NUM_PONTOS;
 
-    while(1){
+    int counter = 0;
+
+    while(counter <20){
 
      for (contador = 0; contador < NUM_PONTOS; contador++) {
         x = contador * incremento;
         y = meu_seno(x);
-        if(y<0){  
+        if(y>0){  
           gpio_set_level(LED_PIN, true);
         }else{
           gpio_set_level(LED_PIN, false);
         }
-        //vTaskDelay(pdMS_TO_TICKS(10)); testar pra ver se vai precisar do delay
+        
+        
        
     }
+    counter ++;
     }
 
+    uint64_t time1 = esp_timer_get_time();
 
-}
+    printf("fim %llu\n", time1);
+    float total = (time1 - time)/1000000;
+
+    printf("total %f\n", total);
+
+    
+
+    }
