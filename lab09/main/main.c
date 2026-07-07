@@ -1,109 +1,63 @@
-#include "wifi.h"
 #include <stdio.h>
-#include <stdbool.h>
-#include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "driver/gpio.h"
 #include "esp_log.h"
-#include "inttypes.h"
-#include "nvs_flash.h"
-#include "esp_websocket_client.h"
 #include "esp_task_wdt.h"
+#include "nvs_flash.h"
 
-#define botao_pin 5
-#define botao_pin1 18
+// Nossas Camadas Inferiores
+#include "wifi.h"
+#include "joystick.h"
+#include "botao.h"
+#include "udp_cliente.h"
 
-volatile bool button_state = false;
-volatile bool button_state1 = false;
+#define JOY_POLL_MS 33 
 
-static volatile TickType_t ultimo_clique = 0;
-static volatile TickType_t ultimo_clique1 = 0;
-
-static void IRAM_ATTR gpio_isr_handler(void *arg)
-{
-    TickType_t tempo_atual = xTaskGetTickCountFromISR();
-
-    if (tempo_atual - ultimo_clique > pdMS_TO_TICKS(200)) {
-        button_state = true;
-        ultimo_clique = tempo_atual;
-    }
-
-    if (tempo_atual - ultimo_clique1 > pdMS_TO_TICKS(200)) {
-        button_state1 = true;
-        ultimo_clique1 = tempo_atual;
-    }
-}
+static const char *TAG = "APP_MAIN";
 
 void app_main(void)
 {
     esp_task_wdt_deinit();
-    // 1. Configuração do Botão
-    gpio_reset_pin(botao_pin);
-    gpio_set_direction(botao_pin, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(botao_pin, GPIO_PULLUP_ONLY);
-    gpio_set_intr_type(botao_pin, GPIO_INTR_NEGEDGE);
+    
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        nvs_flash_init();
+    }
 
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(botao_pin, gpio_isr_handler, NULL);
-    gpio_intr_enable(botao_pin);
-
-    gpio_reset_pin(botao_pin1);
-    gpio_set_direction(botao_pin1, GPIO_MODE_INPUT);
-    gpio_set_pull_mode(botao_pin1, GPIO_PULLUP_ONLY);
-    gpio_set_intr_type(botao_pin1, GPIO_INTR_NEGEDGE);
-
-    gpio_install_isr_service(0);
-    gpio_isr_handler_add(botao_pin1, gpio_isr_handler, NULL);
-    gpio_intr_enable(botao_pin1);
-
-    // 2. Inicialização do Wi-Fi
-    nvs_flash_init();
+    // Inicializa Sistema (Wi-Fi)
     wifi_connection();
+    ESP_LOGI(TAG, "Aguardando IP...");
+    xEventGroupWaitBits(s_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
+    ESP_LOGI(TAG, "Wi-Fi conectado! Configurando Hardware...");
 
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    // Inicializa Hardware
+    joystick_init();
+    botao_chute_init();
 
-    // 3. Configuração do WebSocket
-    esp_websocket_client_config_t ws_config = {
-        .uri = "ws://192.168.1.100:3000?player=p1",
-    };
+    // Inicializa Sistema (UDP)
+    if (!udp_init_and_handshake()) {
+        ESP_LOGE(TAG, "Falha na comunicação com o servidor UDP. Reiniciando...");
+        esp_restart();
+    }
 
-    esp_websocket_client_handle_t client = esp_websocket_client_init(&ws_config);
-    esp_websocket_client_start(client);
+    ESP_LOGI(TAG, "Sistema Modular pronto para jogar! Entrando no loop principal...");
 
-    // Aguarda o handshake do WebSocket terminar
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // 4. Loop Principal
+    // Loop Principal da Aplicação
     while (1) {
-        if (button_state == true) {
-            const char *dados = "{\"type\":\"forward\",\"pixels\":10}";
+        
+        // 1. Receber dados do servidor (não-bloqueante)
+        udp_receive_server_data();
 
-            esp_websocket_client_send_text(
-                client,
-                dados,
-                strlen(dados),
-                portMAX_DELAY
-            );
+        // 2. Ler Hardware
+        float jx, jy;
+        joystick_read_normalized(&jx, &jy);
+        int kick = botao_chute_is_pressed();
 
-            button_state = false;
+        // 3. Enviar Comando para o Sistema
+        udp_send_player_input(jx, jy, kick);
 
-            ESP_LOGI("WS", "Comando enviado: andar para frente");
-        }
-
-        if (button_state1 == true) {
-            const char *dados = "{\"type\":\"left\",\"degrees\":15}";
-
-            esp_websocket_client_send_text(
-                client,
-                dados,
-                strlen(dados),
-                portMAX_DELAY
-            );
-
-            button_state1 = false;
-
-            ESP_LOGI("WS", "Comando enviado: andar para frente");
-        }
+        // 4. Controlar a taxa de atualização (~30Hz)
+        vTaskDelay(pdMS_TO_TICKS(JOY_POLL_MS));
     }
 }
