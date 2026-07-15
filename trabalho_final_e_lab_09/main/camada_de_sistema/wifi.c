@@ -5,7 +5,6 @@ const char *pass = "pacoquita";
 
 static int retry_num = 0;
 
-// Instanciando o grupo de eventos que declaramos no .h
 EventGroupHandle_t s_event_group;
 
 static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data){
@@ -29,13 +28,11 @@ static void wifi_event_handler(void *event_handler_arg, esp_event_base_t event_b
         printf("IP: " IPSTR "\n", IP2STR(&event->ip_info.ip));
         retry_num = 0;
         
-        // Avisa a main.c que o IP foi obtido com sucesso!
         xEventGroupSetBits(s_event_group, WIFI_CONNECTED_BIT);
     }
 }
 
 void wifi_connection(void){
-    // Cria o grupo de eventos antes de inicializar o Wi-Fi
     s_event_group = xEventGroupCreate();
 
     esp_netif_init(); 

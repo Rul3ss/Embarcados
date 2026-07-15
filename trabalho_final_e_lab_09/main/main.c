@@ -5,15 +5,25 @@
 #include "esp_task_wdt.h"
 #include "nvs_flash.h"
 
-// Nossas Camadas Inferiores
+//locais
 #include "wifi.h"
 #include "joystick.h"
 #include "botao.h"
 #include "udp_cliente.h"
 
 #define JOY_POLL_MS 33 
+#define INPUT_EPSILON 0.001f
 
 static const char *TAG = "APP_MAIN";
+
+static int input_changed(float current, float previous)
+{
+    float diff = current - previous;
+    if (diff < 0.0f) {
+        diff = -diff;
+    }
+    return diff > INPUT_EPSILON;
+}
 
 void app_main(void)
 {
@@ -25,17 +35,14 @@ void app_main(void)
         nvs_flash_init();
     }
 
-    // Inicializa Sistema (Wi-Fi)
     wifi_connection();
     ESP_LOGI(TAG, "Aguardando IP...");
     xEventGroupWaitBits(s_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
     ESP_LOGI(TAG, "Wi-Fi conectado! Configurando Hardware...");
 
-    // Inicializa Hardware
     joystick_init();
     botao_chute_init();
 
-    // Inicializa Sistema (UDP)
     if (!udp_init_and_handshake()) {
         ESP_LOGE(TAG, "Falha na comunicação com o servidor UDP. Reiniciando...");
         esp_restart();
@@ -43,21 +50,31 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Sistema Modular pronto para jogar! Entrando no loop principal...");
 
-    // Loop Principal da Aplicação
+    float last_jx = 0.0f;
+    float last_jy = 0.0f;
+    int last_kick = 0;
+
     while (1) {
         
-        // 1. Receber dados do servidor (não-bloqueante)
         udp_receive_server_data();
 
-        // 2. Ler Hardware
         float jx, jy;
         joystick_read_normalized(&jx, &jy);
         int kick = botao_chute_is_pressed();
 
-        // 3. Enviar Comando para o Sistema
-        udp_send_player_input(jx, jy, kick);
+        int joystick_active = (jx != 0.0f || jy != 0.0f);
+        int joystick_changed = input_changed(jx, last_jx) || input_changed(jy, last_jy);
 
-        // 4. Controlar a taxa de atualização (~30Hz)
+        if (kick == 1 ||
+            kick != last_kick ||
+            joystick_active ||
+            joystick_changed) {
+            udp_send_player_input(jx, jy, kick);
+            last_jx = jx;
+            last_jy = jy;
+            last_kick = kick;
+        }
+
         vTaskDelay(pdMS_TO_TICKS(JOY_POLL_MS));
     }
 }

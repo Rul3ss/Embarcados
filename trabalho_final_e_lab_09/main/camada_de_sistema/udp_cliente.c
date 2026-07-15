@@ -3,27 +3,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <fcntl.h> // Necessário para deixar o UDP não-bloqueante
+#include <fcntl.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
 
-// Inclusões exclusivas da Camada de Sistema (Rede)
 #include "lwip/sockets.h"
 #include "lwip/netdb.h"
 
-/* ── Configurações de Rede ─────────────────────────────────── */
 #define UDP_SERVER_IP    "192.168.1.102"
 #define UDP_SERVER_PORT  5555
 
 static const char *TAG = "SYS_UDP";
 
-/* ── Variáveis Globais Privadas (static) ─────────────────────── */
 static int s_udp_sock = -1;
 static int s_player_id = -1;
 
-/* ── Parser JSON Privado ─────────────────────────────────────── */
 static int json_get_int(const char *json, const char *key, int fallback)
 {
     char pattern[32];
@@ -34,8 +30,6 @@ static int json_get_int(const char *json, const char *key, int fallback)
     while (*p == ' ') p++;
     return atoi(p);
 }
-
-/* ── Implementação da API Pública ────────────────────────────── */
 
 bool udp_init_and_handshake(void)
 {
@@ -53,7 +47,6 @@ bool udp_init_and_handshake(void)
         return false;
     }
 
-    // Timeout de 1 segundo para o handshake
     struct timeval timeout = { .tv_sec = 1, .tv_usec = 0 };
     setsockopt(s_udp_sock, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
@@ -78,7 +71,6 @@ bool udp_init_and_handshake(void)
             if (s_player_id >= 0) {
                 ESP_LOGI(TAG, "Handshake ok! PID = %d", s_player_id);
                 
-                // IMPORTANTE: Agora que conectou, passamos o socket para Não-Bloqueante
                 fcntl(s_udp_sock, F_SETFL, O_NONBLOCK);
                 return true;
             }
@@ -89,7 +81,7 @@ bool udp_init_and_handshake(void)
 
 void udp_send_player_input(float jx, float jy, int kick)
 {
-    if (s_udp_sock < 0 || s_player_id < 0) return; // Proteção contra envio sem conexão
+    if (s_udp_sock < 0 || s_player_id < 0) return;
 
     char tx_buf[96];
     snprintf(tx_buf, sizeof(tx_buf),
@@ -108,6 +100,5 @@ void udp_receive_server_data(void)
     
     if (len > 0) {
         rx_buf[len] = 0;
-        // Se precisar ler placar, gols, etc., processe a string rx_buf aqui futuramente.
     }
 }

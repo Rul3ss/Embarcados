@@ -22,4 +22,4 @@ void udp_send_player_input(float jx, float jy, int kick);
  */
 void udp_receive_server_data(void);
 
-#endif // UDP_CLIENT_H
+#endif
